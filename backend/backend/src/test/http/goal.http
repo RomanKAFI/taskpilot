@@ -1,0 +1,20 @@
+### List goals
+GET http://localhost:8080/api/v1/goals
+
+### Create goal (минимальный)
+POST http://localhost:8080/api/v1/goals
+Content-Type: application/json
+
+{
+  "title": "My first goal"
+}
+
+### Create goal (с описанием)
+POST http://localhost:8080/api/v1/goals
+Content-Type: application/json
+
+{
+  "title": "Q4 Marketing Launch",
+  "description": "All workstreams for Q4 campaign",
+  "ownerId": null
+}

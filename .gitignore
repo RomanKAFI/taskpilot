@@ -1,0 +1,21 @@
+# IDE
+.idea/
+*.iml
+
+# Build
+target/
+build/
+
+# Node (на будущее для фронта)
+node_modules/
+dist/
+
+# OS
+.DS_Store
+
+# Docker
+dbdata/
+
+# Env
+.env
+**/*.env

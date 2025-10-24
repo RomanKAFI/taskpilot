@@ -1,0 +1,38 @@
+### Create task (подставь PROJECT_ID)
+POST http://localhost:8080/api/v1/tasks
+Content-Type: application/json
+
+{
+  "projectId": "PASTE-PROJECT-ID",
+  "title": "Design homepage",
+  "description": "Hero, CTA, pricing",
+  "status": "IN_PROGRESS"
+}
+
+### List tasks by project
+GET http://localhost:8080/api/v1/tasks?projectId=PASTE-PROJECT-ID
+
+### Update task status (подставь TASK_ID)
+PATCH http://localhost:8080/api/v1/tasks/PASTE-TASK-ID/status
+Content-Type: application/json
+
+{ "status": "DONE" }
+
+### Create subtask (подставь TASK_ID)
+POST http://localhost:8080/api/v1/subtasks
+Content-Type: application/json
+
+{
+  "taskId": "PASTE-TASK-ID",
+  "title": "Write hero copy",
+  "status": "TODO"
+}
+
+### List subtasks by task
+GET http://localhost:8080/api/v1/subtasks?taskId=PASTE-TASK-ID
+
+### Update subtask status (подставь SUBTASK_ID)
+PATCH http://localhost:8080/api/v1/subtasks/PASTE-SUBTASK-ID/status
+Content-Type: application/json
+
+{ "status": "IN_PROGRESS" }

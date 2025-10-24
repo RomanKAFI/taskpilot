@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    container_name: taskpilot-db
+    environment:
+      POSTGRES_USER: taskpilot
+      POSTGRES_PASSWORD: taskpilot
+      POSTGRES_DB: taskpilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+volumes:
+  dbdata:
