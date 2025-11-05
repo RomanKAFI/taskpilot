@@ -1,0 +1,2 @@
+ALTER TABLE task
+    ADD COLUMN priority varchar(16) NOT NULL DEFAULT 'MEDIUM';

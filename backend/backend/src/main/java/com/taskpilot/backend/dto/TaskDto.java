@@ -2,29 +2,32 @@ package com.taskpilot.backend.dto;
 
 import com.taskpilot.backend.model.TaskPriority;
 import com.taskpilot.backend.model.TaskStatus;
-import jakarta.validation.constraints.NotNull;
+
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
-public class CreateTaskRequest {
+public class TaskDto {
 
-    @NotNull
+    private UUID id;
     private UUID projectId;
-    @NotNull
     private String title;
     private String description;
     private UUID assigneeId;
-
-    // новое поле для статуса
     private TaskStatus status;
+    private LocalDate dueDate;      // дедлайн
+    private TaskPriority priority;  // приоритет
+    private Instant createdAt;
 
-    // новое поле для дедлайна
-    private LocalDate dueDate;
+    // --- getters / setters ---
 
-    // новое поле для приоритета
-    private TaskPriority priority;
+    public UUID getId() {
+        return id;
+    }
 
-    // === getters и setters ===
+    public void setId(UUID id) {
+        this.id = id;
+    }
 
     public UUID getProjectId() {
         return projectId;
@@ -80,5 +83,13 @@ public class CreateTaskRequest {
 
     public void setPriority(TaskPriority priority) {
         this.priority = priority;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 }

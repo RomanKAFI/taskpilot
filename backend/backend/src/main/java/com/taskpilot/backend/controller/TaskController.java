@@ -1,8 +1,8 @@
 package com.taskpilot.backend.controller;
 
 import com.taskpilot.backend.dto.CreateTaskRequest;
+import com.taskpilot.backend.dto.TaskDto;
 import com.taskpilot.backend.dto.UpdateTaskStatusRequest;
-import com.taskpilot.backend.model.Task;
 import com.taskpilot.backend.model.TaskStatus;
 import com.taskpilot.backend.service.TaskService;
 import jakarta.validation.Valid;
@@ -18,22 +18,39 @@ public class TaskController {
 
     private final TaskService service;
 
-    public TaskController(TaskService service) { this.service = service; }
+    public TaskController(TaskService service) {
+        this.service = service;
+    }
 
+    /**
+     * GET /api/v1/tasks?projectId=...&status=...
+     */
     @GetMapping
-    public List<Task> list(@RequestParam UUID projectId,
-                           @RequestParam(required = false) TaskStatus status) {
+    public List<TaskDto> list(
+            @RequestParam UUID projectId,
+            @RequestParam(required = false) TaskStatus status
+    ) {
         return service.list(projectId, status);
     }
 
+    /**
+     * POST /api/v1/tasks
+     */
     @PostMapping
-    public ResponseEntity<Task> create(@Valid @RequestBody CreateTaskRequest req) {
-        return ResponseEntity.ok(service.create(req));
+    public ResponseEntity<TaskDto> create(@Valid @RequestBody CreateTaskRequest request) {
+        TaskDto created = service.create(request);
+        return ResponseEntity.ok(created);
     }
 
+    /**
+     * PATCH /api/v1/tasks/{id}/status
+     */
     @PatchMapping("/{id}/status")
-    public ResponseEntity<Task> updateStatus(@PathVariable UUID id,
-                                             @Valid @RequestBody UpdateTaskStatusRequest req) {
-        return ResponseEntity.ok(service.updateStatus(id, req));
+    public ResponseEntity<Void> updateStatus(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateTaskStatusRequest request
+    ) {
+        service.updateStatus(id, request);
+        return ResponseEntity.noContent().build();
     }
 }
