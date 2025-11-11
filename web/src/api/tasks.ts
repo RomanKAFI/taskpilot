@@ -1,47 +1,53 @@
-import api from "./client";
+// web/src/api/tasks.ts
+import client from "./client";
 
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "DONE";
-export type TaskPriority = "LOW" | "MEDIUM" | "HIGH";
+export type TaskPriority = "HIGH" | "MEDIUM" | "LOW";
 
 export type Task = {
     id: string;
     projectId: string;
     title: string;
-    description?: string | null;
     status: TaskStatus;
-    assigneeId?: string | null;
-    dueDate?: string | null;    // 'YYYY-MM-DD'
-    priority: TaskPriority;     // новое поле
+    priority: TaskPriority;
+    dueDate: string | null;   // <= ВАЖНО: string | null
     createdAt: string;
 };
 
-// грузим задачи по projectId
+export type CreateTaskPayload = {
+    projectId: string;
+    title: string;
+    status: TaskStatus;
+    priority: TaskPriority;
+    dueDate: string | null;
+};
+
+// получить задачи проекта
 export async function fetchTasks(projectId: string): Promise<Task[]> {
-    const res = await api.get("/v1/tasks", { params: { projectId } });
+    const res = await client.get("/tasks", {
+        params: { projectId },
+    });
     return res.data;
 }
 
-// меняем статус
-export async function patchTaskStatus(id: string, status: TaskStatus): Promise<Task> {
-    const res = await api.patch(`/v1/tasks/${id}/status`, { status });
+// создать задачу
+export async function createTask(payload: CreateTaskPayload): Promise<Task> {
+    const res = await client.post("/tasks", payload);
     return res.data;
 }
 
-// удаление (если понадобится)
-export async function deleteTask(id: string): Promise<void> {
-    await api.delete(`/v1/tasks/${id}`);
-}
-
-// создание задачи
-export async function createTask(
-    projectId: string,
-    title: string,
-    status: TaskStatus = "TODO",
-    priority: TaskPriority = "MEDIUM",
-    dueDate?: string
+// обновить статус задачи
+export async function patchTaskStatus(
+    taskId: string,
+    newStatus: TaskStatus,
 ): Promise<Task> {
-    const body: any = { projectId, title, status, priority };
-    if (dueDate) body.dueDate = dueDate;
-    const res = await api.post("/v1/tasks", body);
+    const res = await client.patch(`/tasks/${taskId}/status`, null, {
+        params: { status: newStatus },
+    });
     return res.data;
+}
+
+// удалить задачу
+export async function deleteTask(taskId: string): Promise<void> {
+    await client.delete(`/tasks/${taskId}`);
 }

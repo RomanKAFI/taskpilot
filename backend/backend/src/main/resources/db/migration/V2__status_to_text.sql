@@ -10,7 +10,7 @@ BEGIN
   ) THEN
 ALTER TABLE task
     ADD CONSTRAINT task_status_check
-        CHECK (status IN ('TO_DO','IN_PROGRESS','BLOCKED','DONE'));
+        CHECK (status IN ('TODO','IN_PROGRESS','BLOCKED','DONE'));
 END IF;
 END $$;
 

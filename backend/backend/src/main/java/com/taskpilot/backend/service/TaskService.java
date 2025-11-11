@@ -2,96 +2,103 @@ package com.taskpilot.backend.service;
 
 import com.taskpilot.backend.dto.CreateTaskRequest;
 import com.taskpilot.backend.dto.TaskDto;
-import com.taskpilot.backend.dto.UpdateTaskStatusRequest;
+import com.taskpilot.backend.dto.UpdateTaskRequest;
 import com.taskpilot.backend.model.Task;
-import com.taskpilot.backend.model.TaskPriority;
 import com.taskpilot.backend.model.TaskStatus;
 import com.taskpilot.backend.repository.TaskRepository;
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
+@Transactional
 public class TaskService {
 
     private final TaskRepository taskRepository;
 
-    public TaskService(TaskRepository taskRepository) {
-        this.taskRepository = taskRepository;
-    }
-
-    // ===== Методы, которые ждёт TaskController =====
-
     /**
-     * GET /api/v1/tasks?projectId=...
-     * В TaskController вызывается service.list(projectId, status)
-     * Сейчас статус можно игнорировать и просто возвращать все задачи проекта.
+     * Получить задачи по projectId.
      */
-    public List<TaskDto> list(UUID projectId, TaskStatus status) {
-        return taskRepository.findByProjectId(projectId).stream()
+    public List<TaskDto> getTasksByProjectId(UUID projectId) {
+        List<Task> tasks = taskRepository.findByProjectId(projectId);
+        return tasks.stream()
                 .map(this::toDto)
                 .toList();
     }
 
     /**
-     * POST /api/v1/tasks
-     * В TaskController вызывается service.create(request).
-     * Здесь собираем TaskDto из CreateTaskRequest и передаём в createTask(...).
+     * Создать задачу.
      */
-    public TaskDto create(CreateTaskRequest request) {
-        TaskDto dto = new TaskDto();
-        dto.setProjectId(request.getProjectId());
-        dto.setTitle(request.getTitle());
-        dto.setDescription(request.getDescription());
-        dto.setAssigneeId(request.getAssigneeId());
-        dto.setStatus(request.getStatus());      // может быть null — тогда ниже подставим TODO
-        dto.setDueDate(request.getDueDate());    // может быть null
-        dto.setPriority(request.getPriority());  // может быть null, подставим MEDIUM
+    public TaskDto createTask(CreateTaskRequest request) {
+        Task task = new Task();
 
-        return createTask(dto);
+        // Генерируем ID вручную, чтобы Hibernate был доволен
+        task.setId(UUID.randomUUID());
+
+        task.setProjectId(request.getProjectId());
+        task.setTitle(request.getTitle());
+        task.setStatus(request.getStatus());      // TODO / IN_PROGRESS / BLOCKED / DONE
+        task.setPriority(request.getPriority());  // HIGH / MEDIUM / LOW
+
+        // 👉 dueDate уже LocalDate в DTO, просто копируем (может быть null — это ок)
+        LocalDate dueDate = request.getDueDate();
+        task.setDueDate(dueDate);
+
+        // created_at — ставим сейчас, если вдруг null
+        if (task.getCreatedAt() == null) {
+            task.setCreatedAt(Instant.now());
+        }
+
+        task = taskRepository.save(task);
+        return toDto(task);
     }
 
     /**
-     * PATCH /api/v1/tasks/{id}/status
-     * В TaskController вызывается service.updateStatus(id, request).
-     * Просто достаём статус и переиспользуем метод ниже.
+     * Обновить только статус задачи.
      */
-    public void updateStatus(UUID taskId, UpdateTaskStatusRequest request) {
-        updateStatus(taskId, request.getStatus());
+    public TaskDto updateStatus(UUID taskId, TaskStatus newStatus) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+
+        task.setStatus(newStatus);
+        Task saved = taskRepository.save(task);
+
+        return toDto(saved);
     }
 
-    // ===== Внутренние методы работы с сущностью Task =====
+    /**
+     * Полное обновление задачи (Edit).
+     * Пока фронт не шлёт все поля — оставляем заглушку.
+     */
+    public TaskDto updateTask(UUID taskId, UpdateTaskRequest request) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 
-    public TaskDto createTask(TaskDto dto) {
-        Task task = new Task();
-        task.setId(UUID.randomUUID());
-        task.setProjectId(dto.getProjectId());
-        task.setTitle(dto.getTitle());
-        task.setDescription(dto.getDescription());
-        task.setAssigneeId(dto.getAssigneeId());
-
-        // статус: если null — ставим TODO
-        task.setStatus(dto.getStatus() != null ? dto.getStatus() : TaskStatus.TODO);
-
-        // новые поля
-        task.setDueDate(dto.getDueDate());
-        task.setPriority(dto.getPriority() != null ? dto.getPriority() : TaskPriority.MEDIUM);
-
-        task.setCreatedAt(Instant.now());
+        // TODO: позже проставить в task поля из request (title, status, priority, dueDate и т.д.)
 
         Task saved = taskRepository.save(task);
         return toDto(saved);
     }
 
-    public void updateStatus(UUID taskId, TaskStatus status) {
-        Task task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new RuntimeException("Task not found"));
-        task.setStatus(status);
-        taskRepository.save(task);
+    /**
+     * Удалить задачу.
+     */
+    public void deleteTask(UUID taskId) {
+        if (!taskRepository.existsById(taskId)) {
+            return;
+        }
+        taskRepository.deleteById(taskId);
     }
 
+    /**
+     * Маппинг Task -> TaskDto.
+     */
     private TaskDto toDto(Task task) {
         TaskDto dto = new TaskDto();
         dto.setId(task.getId());
@@ -100,8 +107,8 @@ public class TaskService {
         dto.setDescription(task.getDescription());
         dto.setAssigneeId(task.getAssigneeId());
         dto.setStatus(task.getStatus());
-        dto.setDueDate(task.getDueDate());       // дедлайн наружу
-        dto.setPriority(task.getPriority());     // приоритет наружу
+        dto.setDueDate(task.getDueDate());
+        dto.setPriority(task.getPriority());
         dto.setCreatedAt(task.getCreatedAt());
         return dto;
     }

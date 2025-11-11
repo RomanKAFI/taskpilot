@@ -1,31 +1,28 @@
 // web/src/hooks/useTasks.ts
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    createTask,
-    deleteTask,
+    Task,
+    TaskStatus,
+    TaskPriority,
     fetchTasks,
     patchTaskStatus,
-    Task,
-    TaskPriority,
-    TaskStatus,
+    deleteTask,
+    createTask,
 } from "../api/tasks";
 
-export type LoadState<T> =
-    | { state: "idle" }
-    | { state: "loading" }
-    | { state: "ready"; data: T }
-    | { state: "error"; message: string };
+const STATUS_ORDER: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
 
 export function useTasks(projectId: string) {
     const [items, setItems] = useState<Task[]>([]);
-    const [load, setLoad] = useState<LoadState<Task[]>>({ state: "idle" });
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const [newTitle, setNewTitle] = useState("");
     const [newStatus, setNewStatus] = useState<TaskStatus>("TODO");
     const [newPriority, setNewPriority] = useState<TaskPriority>("MEDIUM");
     const [newDueDate, setNewDueDate] = useState<string>("");
 
-    // группировка задач по статусам (TODO / IN_PROGRESS / BLOCKED / DONE)
+    // --- группировка по статусам ---
     const byStatus = useMemo(() => {
         const map: Record<TaskStatus, Task[]> = {
             TODO: [],
@@ -39,17 +36,17 @@ export function useTasks(projectId: string) {
         return map;
     }, [items]);
 
+    // --- загрузка всех задач ---
     const loadAll = useCallback(async () => {
         try {
-            setLoad({ state: "loading" });
+            setLoading(true);
+            setError(null);
             const data = await fetchTasks(projectId);
             setItems(data);
-            setLoad({ state: "ready", data });
         } catch (e: any) {
-            setLoad({
-                state: "error",
-                message: e?.message || "Failed to load tasks",
-            });
+            setError(e?.message || "Failed to load tasks");
+        } finally {
+            setLoading(false);
         }
     }, [projectId]);
 
@@ -57,91 +54,75 @@ export function useTasks(projectId: string) {
         void loadAll();
     }, [loadAll]);
 
+    // --- создание задачи ---
     const onCreate = useCallback(async () => {
-        if (!newTitle.trim()) return;
-
         const title = newTitle.trim();
-        const status = newStatus;
-        const priority = newPriority;
-        const dueDate = newDueDate || undefined;
+        if (!title) return;
+
+        const dueDateValue: string | null = newDueDate || null;
 
         const temp: Task = {
             id: "temp-" + Math.random().toString(36).slice(2),
             projectId,
             title,
-            description: null,
-            status,
-            assigneeId: null,
-            dueDate: dueDate ?? null,
-            priority,
+            status: newStatus,
+            priority: newPriority,
+            dueDate: dueDateValue,
             createdAt: new Date().toISOString(),
         };
 
+        // оптимистично добавляем
         setItems((prev) => [temp, ...prev]);
         setNewTitle("");
 
         try {
-            const created = await createTask(
+            const created = await createTask({
                 projectId,
                 title,
-                status,
-                priority,
-                dueDate
-            );
-            setItems((prev) =>
-                prev.map((t) => (t.id === temp.id ? created : t))
-            );
-            window.dispatchEvent(
-                new CustomEvent("toast", {
-                    detail: { type: "success", text: "Task created" },
-                })
-            );
+                status: newStatus,
+                priority: newPriority,
+                dueDate: dueDateValue,
+            });
+
+            setItems((prev) => prev.map((t) => (t.id === temp.id ? created : t)));
         } catch (e: any) {
+            // откатываем
             setItems((prev) => prev.filter((t) => t.id !== temp.id));
-            window.dispatchEvent(
-                new CustomEvent("toast", {
-                    detail: { type: "error", text: e?.message || "Create failed" },
-                })
-            );
+            setError(e?.message || "Failed to create task");
         }
     }, [newTitle, newStatus, newPriority, newDueDate, projectId]);
 
+    // --- смена статуса (влево/вправо) ---
     const onMove = useCallback(
         async (id: string, dir: -1 | 1) => {
-            const ORDER: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
             const cur = items.find((t) => t.id === id);
             if (!cur) return;
 
-            const i = ORDER.indexOf(cur.status);
+            const i = STATUS_ORDER.indexOf(cur.status);
             const j = i + dir;
-            if (j < 0 || j >= ORDER.length) return;
+            if (j < 0 || j >= STATUS_ORDER.length) return;
 
-            const next = ORDER[j];
+            const nextStatus = STATUS_ORDER[j];
             const snapshot = items;
 
             setItems((prev) =>
-                prev.map((t) => (t.id === id ? { ...t, status: next } : t))
+                prev.map((t) =>
+                    t.id === id ? { ...t, status: nextStatus } : t,
+                ),
             );
 
             try {
-                await patchTaskStatus(id, next);
-                window.dispatchEvent(
-                    new CustomEvent("toast", {
-                        detail: { type: "success", text: "Status updated" },
-                    })
-                );
+                await patchTaskStatus(id, nextStatus);
             } catch (e: any) {
+                // если бекенд упал — откатываем список
                 setItems(snapshot);
-                window.dispatchEvent(
-                    new CustomEvent("toast", {
-                        detail: { type: "error", text: e?.message || "Update failed" },
-                    })
-                );
+                setError(e?.message || "Failed to update status");
             }
         },
-        [items]
+        [items],
     );
 
+    // --- удаление задачи ---
     const onDelete = useCallback(
         async (id: string) => {
             const snapshot = items;
@@ -149,28 +130,25 @@ export function useTasks(projectId: string) {
 
             try {
                 await deleteTask(id);
-                window.dispatchEvent(
-                    new CustomEvent("toast", {
-                        detail: { type: "success", text: "Task deleted" },
-                    })
-                );
             } catch (e: any) {
                 setItems(snapshot);
-                window.dispatchEvent(
-                    new CustomEvent("toast", {
-                        detail: { type: "error", text: e?.message || "Delete failed" },
-                    })
-                );
+                setError(e?.message || "Failed to delete task");
             }
         },
-        [items]
+        [items],
     );
 
     return {
-        byStatus,
+        // данные
         items,
-        load,
+        byStatus,
+
+        // состояние загрузки
+        loading,
+        error,
         loadAll,
+
+        // поля формы
         newTitle,
         setNewTitle,
         newStatus,
@@ -179,6 +157,8 @@ export function useTasks(projectId: string) {
         setNewPriority,
         newDueDate,
         setNewDueDate,
+
+        // действия
         onCreate,
         onMove,
         onDelete,

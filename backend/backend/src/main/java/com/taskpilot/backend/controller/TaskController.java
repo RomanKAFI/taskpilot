@@ -2,11 +2,12 @@ package com.taskpilot.backend.controller;
 
 import com.taskpilot.backend.dto.CreateTaskRequest;
 import com.taskpilot.backend.dto.TaskDto;
-import com.taskpilot.backend.dto.UpdateTaskStatusRequest;
+import com.taskpilot.backend.dto.UpdateTaskRequest;
 import com.taskpilot.backend.model.TaskStatus;
 import com.taskpilot.backend.service.TaskService;
 import jakarta.validation.Valid;
-import org.springframework.http.ResponseEntity;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,43 +15,61 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/tasks")
+@RequiredArgsConstructor
 public class TaskController {
 
-    private final TaskService service;
-
-    public TaskController(TaskService service) {
-        this.service = service;
-    }
+    private final TaskService taskService;
 
     /**
-     * GET /api/v1/tasks?projectId=...&status=...
+     * Список задач по проекту
+     * GET /api/v1/tasks?projectId=...
      */
     @GetMapping
-    public List<TaskDto> list(
-            @RequestParam UUID projectId,
-            @RequestParam(required = false) TaskStatus status
-    ) {
-        return service.list(projectId, status);
+    public List<TaskDto> getTasks(@RequestParam UUID projectId) {
+        return taskService.getTasksByProjectId(projectId);
     }
 
     /**
+     * Создать задачу
      * POST /api/v1/tasks
      */
     @PostMapping
-    public ResponseEntity<TaskDto> create(@Valid @RequestBody CreateTaskRequest request) {
-        TaskDto created = service.create(request);
-        return ResponseEntity.ok(created);
+    @ResponseStatus(HttpStatus.CREATED)
+    public TaskDto createTask(@Valid @RequestBody CreateTaskRequest request) {
+        return taskService.createTask(request);
     }
 
     /**
-     * PATCH /api/v1/tasks/{id}/status
+     * Обновить только статус
+     * PATCH /api/v1/tasks/{id}/status?status=IN_PROGRESS
      */
-    @PatchMapping("/{id}/status")
-    public ResponseEntity<Void> updateStatus(
-            @PathVariable UUID id,
-            @Valid @RequestBody UpdateTaskStatusRequest request
+    @PatchMapping("/{taskId}/status")
+    public TaskDto updateStatus(
+            @PathVariable UUID taskId,
+            @RequestParam TaskStatus status
     ) {
-        service.updateStatus(id, request);
-        return ResponseEntity.noContent().build();
+        return taskService.updateStatus(taskId, status);
+    }
+
+    /**
+     * Полное обновление задачи (title / status / priority / dueDate)
+     * PATCH /api/v1/tasks/{id}
+     */
+    @PatchMapping("/{taskId}")
+    public TaskDto updateTask(
+            @PathVariable UUID taskId,
+            @Valid @RequestBody UpdateTaskRequest request
+    ) {
+        return taskService.updateTask(taskId, request);
+    }
+
+    /**
+     * Удалить задачу
+     * DELETE /api/v1/tasks/{id}
+     */
+    @DeleteMapping("/{taskId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteTask(@PathVariable UUID taskId) {
+        taskService.deleteTask(taskId);
     }
 }

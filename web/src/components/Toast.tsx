@@ -1,28 +1,26 @@
 // web/src/components/Toast.tsx
-import { useEffect, useState } from "react";
+import type { FC } from "react";
 
-type Toast = { type: "success" | "error"; text: string };
+type ToastProps = {
+    message: string;
+    onClose: () => void;
+};
 
-export default function Toast() {
-    const [msg, setMsg] = useState<Toast | null>(null);
+const Toast: FC<ToastProps> = ({ message, onClose }) => {
+    if (!message) return null;
 
-    useEffect(() => {
-        const onToast = (e: Event) => {
-            const detail = (e as CustomEvent).detail as Toast;
-            setMsg(detail);
-            const t = setTimeout(() => setMsg(null), 2500);
-            return () => clearTimeout(t);
-        };
-        window.addEventListener("toast", onToast as any);
-        return () => window.removeEventListener("toast", onToast as any);
-    }, []);
+    return (
+        <div className="fixed bottom-4 right-4 bg-black text-white text-sm px-3 py-2 rounded shadow-lg flex items-center gap-2">
+            <span>{message}</span>
+            <button
+                type="button"
+                className="text-xs underline"
+                onClick={onClose}
+            >
+                Close
+            </button>
+        </div>
+    );
+};
 
-    if (!msg) return null;
-
-    const base =
-        "fixed bottom-4 right-4 px-4 py-2 rounded-xl shadow-lg text-sm";
-    const color =
-        msg.type === "success" ? "bg-green-600 text-white" : "bg-red-600 text-white";
-
-    return <div className={`${base} ${color}`}>{msg.text}</div>;
-}
+export default Toast;

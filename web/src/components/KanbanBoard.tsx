@@ -1,26 +1,53 @@
-import { useEffect, useState } from "react";
+// web/src/components/KanbanBoard.tsx
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { Task, TaskStatus, TaskPriority } from "../api/tasks";
 import {
-    Task,
-    TaskStatus,
-    TaskPriority,
     fetchTasks,
     createTask,
     patchTaskStatus,
+    deleteTask,
 } from "../api/tasks";
+import Spinner from "./Spinner";
+import Toast from "./Toast";
 
 type Props = {
     projectId: string;
 };
 
+type FilterStatus = "ALL" | TaskStatus;
+type FilterPriority = "ALL" | TaskPriority;
+
+const TASK_STATUSES: TaskStatus[] = ["TODO", "IN_PROGRESS", "BLOCKED", "DONE"];
+const TASK_PRIORITIES: TaskPriority[] = ["HIGH", "MEDIUM", "LOW"];
+
+// простая проверка просроченности
+function isOverdue(task: Task): boolean {
+    if (!task.dueDate) return false;
+    if (task.status === "DONE") return false;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const due = new Date(task.dueDate);
+    return due < today;
+}
+
 export default function KanbanBoard({ projectId }: Props) {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(false);
+    const [toast, setToast] = useState<string | null>(null);
 
-    // поля формы
+    // форма создания
     const [title, setTitle] = useState("");
     const [status, setStatus] = useState<TaskStatus>("TODO");
     const [priority, setPriority] = useState<TaskPriority>("MEDIUM");
-    const [dueDate, setDueDate] = useState<string>("");
+    const [dueDate, setDueDate] = useState("");
+
+    // фильтры
+    const [filterStatus, setFilterStatus] = useState<FilterStatus>("ALL");
+    const [filterPriority, setFilterPriority] =
+        useState<FilterPriority>("ALL");
+    const [onlyOverdue, setOnlyOverdue] = useState(false);
 
     // загрузка задач
     const loadTasks = async () => {
@@ -28,8 +55,6 @@ export default function KanbanBoard({ projectId }: Props) {
         try {
             const data = await fetchTasks(projectId);
             setTasks(data);
-        } catch (e) {
-            console.error("Failed to load tasks", e);
         } finally {
             setLoading(false);
         }
@@ -39,172 +64,316 @@ export default function KanbanBoard({ projectId }: Props) {
         void loadTasks();
     }, [projectId]);
 
-    // создание задачи
-    const handleCreateTask = async (e: React.FormEvent) => {
+    // какие задачи видим с учётом фильтров
+    const visibleTasks = useMemo(() => {
+        return tasks.filter((t) => {
+            if (filterStatus !== "ALL" && t.status !== filterStatus) return false;
+            if (filterPriority !== "ALL" && t.priority !== filterPriority)
+                return false;
+            if (onlyOverdue && !isOverdue(t)) return false;
+            return true;
+        });
+    }, [tasks, filterStatus, filterPriority, onlyOverdue]);
+
+    // статистика по видимым задачам
+    const stats = useMemo(() => {
+        const total = visibleTasks.length;
+        const todo = visibleTasks.filter((t) => t.status === "TODO").length;
+        const inProgress = visibleTasks.filter(
+            (t) => t.status === "IN_PROGRESS",
+        ).length;
+        const blocked = visibleTasks.filter(
+            (t) => t.status === "BLOCKED",
+        ).length;
+        const done = visibleTasks.filter((t) => t.status === "DONE").length;
+
+        const progress = total ? Math.round((done / total) * 100) : 0;
+
+        return { total, todo, inProgress, blocked, done, progress };
+    }, [visibleTasks]);
+
+    // создать задачу
+    const handleAddTask = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!title.trim()) return;
 
         try {
-            await createTask(
+            await createTask({
                 projectId,
-                title.trim(),
+                title: title.trim(),
                 status,
                 priority,
-                dueDate || undefined
-            );
+                dueDate: dueDate || null,
+            });
 
-            // очистка формы
             setTitle("");
             setStatus("TODO");
             setPriority("MEDIUM");
             setDueDate("");
-
-            // перезагрузим задачи
+            setToast("Task added successfully!");
             await loadTasks();
-        } catch (e) {
-            console.error("Failed to create task", e);
+        } catch {
+            setToast("Error adding task!");
         }
     };
 
     // смена статуса
-    const handleChangeStatus = async (taskId: string, newStatus: TaskStatus) => {
+    const handleStatusChange = async (
+        taskId: string,
+        newStatus: TaskStatus,
+    ) => {
         try {
             await patchTaskStatus(taskId, newStatus);
             await loadTasks();
-        } catch (e) {
-            console.error("Failed to update status", e);
+        } catch {
+            setToast("Error updating task!");
         }
     };
 
-    const columns: { key: TaskStatus; title: string }[] = [
-        { key: "TODO",        title: "TODO" },
-        { key: "IN_PROGRESS", title: "IN PROGRESS" },
-        { key: "BLOCKED",     title: "BLOCKED" },
-        { key: "DONE",        title: "DONE" },
-    ];
+    // удаление
+    const handleDelete = async (taskId: string) => {
+        const snapshot = tasks;
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+        try {
+            await deleteTask(taskId);
+            setToast("Task deleted");
+        } catch {
+            setTasks(snapshot);
+            setToast("Error deleting task!");
+        }
+    };
+
+    const resetFilters = () => {
+        setFilterStatus("ALL");
+        setFilterPriority("ALL");
+        setOnlyOverdue(false);
+    };
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-            {columns.map((col) => {
-                const colTasks = tasks.filter((t) => t.status === col.key);
+        <div className="p-4">
+            {/* панель статистики */}
+            <div className="flex flex-wrap items-center gap-3 mb-2 text-sm">
+        <span>
+          Total: {stats.total} • TODO: {stats.todo} • In progress:{" "}
+            {stats.inProgress} • Blocked: {stats.blocked} • Done:{" "}
+            {stats.done}
+        </span>
+                <span className="ml-auto font-semibold">
+          Progress: {stats.progress}%
+        </span>
+            </div>
 
-                return (
-                    <div key={col.key} className="bg-gray-50 border rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                            <h2 className="font-semibold text-sm">{col.title}</h2>
-                            <button
-                                type="button"
-                                className="text-xs text-gray-500"
-                                onClick={loadTasks}
-                            >
-                                Refresh
-                            </button>
-                        </div>
+            <div className="mb-4">
+                <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                        className="h-full bg-green-500 transition-all"
+                        style={{ width: `${stats.progress}%` }}
+                    />
+                </div>
+            </div>
 
-                        {/* форма создания задачи — только в колонке TODO */}
-                        {col.key === "TODO" && (
-                            <form
-                                onSubmit={handleCreateTask}
-                                className="mb-3 space-y-2 border-b pb-3"
-                            >
-                                <input
-                                    type="text"
-                                    className="w-full border rounded px-2 py-1 text-sm"
-                                    placeholder="New task title..."
-                                    value={title}
-                                    onChange={(e) => setTitle(e.target.value)}
-                                />
+            {/* панель фильтров */}
+            <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+                <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500">Status:</span>
+                    <select
+                        className="border rounded px-2 py-1 text-xs"
+                        value={filterStatus}
+                        onChange={(e) =>
+                            setFilterStatus(e.target.value as FilterStatus)
+                        }
+                    >
+                        <option value="ALL">All</option>
+                        {TASK_STATUSES.map((s) => (
+                            <option key={s} value={s}>
+                                {s}
+                            </option>
+                        ))}
+                    </select>
+                </div>
 
-                                <div className="flex gap-2">
-                                    <select
-                                        className="flex-1 border rounded px-2 py-1 text-sm"
-                                        value={status}
-                                        onChange={(e) =>
-                                            setStatus(e.target.value as TaskStatus)
-                                        }
-                                    >
-                                        <option value="TODO">TODO</option>
-                                        <option value="IN_PROGRESS">IN PROGRESS</option>
-                                        <option value="BLOCKED">BLOCKED</option>
-                                        <option value="DONE">DONE</option>
-                                    </select>
+                <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500">Priority:</span>
+                    <select
+                        className="border rounded px-2 py-1 text-xs"
+                        value={filterPriority}
+                        onChange={(e) =>
+                            setFilterPriority(e.target.value as FilterPriority)
+                        }
+                    >
+                        <option value="ALL">All</option>
+                        {TASK_PRIORITIES.map((p) => (
+                            <option key={p} value={p}>
+                                {p}
+                            </option>
+                        ))}
+                    </select>
+                </div>
 
-                                    <select
-                                        className="flex-1 border rounded px-2 py-1 text-sm"
-                                        value={priority}
-                                        onChange={(e) =>
-                                            setPriority(e.target.value as TaskPriority)
-                                        }
-                                    >
-                                        <option value="LOW">Low</option>
-                                        <option value="MEDIUM">Medium</option>
-                                        <option value="HIGH">High</option>
-                                    </select>
-                                </div>
+                <label className="flex items-center gap-1 text-xs text-gray-600">
+                    <input
+                        type="checkbox"
+                        className="rounded border-gray-300"
+                        checked={onlyOverdue}
+                        onChange={(e) => setOnlyOverdue(e.target.checked)}
+                    />
+                    Only overdue
+                </label>
 
-                                <input
-                                    type="date"
-                                    className="w-full border rounded px-2 py-1 text-sm"
-                                    value={dueDate}
-                                    onChange={(e) => setDueDate(e.target.value)}
-                                />
+                <button
+                    type="button"
+                    onClick={resetFilters}
+                    className="text-xs text-gray-500 underline"
+                >
+                    Reset
+                </button>
+            </div>
 
+            {loading && <Spinner />}
+
+            {/* колонки */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {TASK_STATUSES.map((col) => {
+                    const tasksInCol = visibleTasks.filter(
+                        (t) => t.status === col,
+                    );
+
+                    return (
+                        <div
+                            key={col}
+                            className="border rounded-lg bg-white p-3 shadow-sm"
+                        >
+                            <div className="flex justify-between items-center mb-2">
+                                <h2 className="font-semibold text-sm">{col}</h2>
                                 <button
-                                    type="submit"
-                                    className="w-full bg-black text-white text-sm py-1 rounded"
-                                    disabled={loading}
+                                    type="button"
+                                    onClick={loadTasks}
+                                    className="text-xs text-gray-400 border rounded px-2 py-0.5 hover:bg-gray-50"
                                 >
-                                    Add task
+                                    Refresh
                                 </button>
-                            </form>
-                        )}
+                            </div>
 
-                        {/* список задач в колонке */}
-                        <div className="space-y-2">
-                            {colTasks.length === 0 && (
+                            {/* форма создания — только в TODO */}
+                            {col === "TODO" && (
+                                <form
+                                    onSubmit={handleAddTask}
+                                    className="mb-3 space-y-2 border-b pb-3"
+                                >
+                                    <input
+                                        className="border p-1 w-full rounded text-sm"
+                                        placeholder="New task title..."
+                                        value={title}
+                                        onChange={(e) => setTitle(e.target.value)}
+                                    />
+
+                                    <div className="flex gap-2">
+                                        <select
+                                            className="border rounded p-1 flex-1 text-xs"
+                                            value={status}
+                                            onChange={(e) =>
+                                                setStatus(e.target.value as TaskStatus)
+                                            }
+                                        >
+                                            {TASK_STATUSES.map((s) => (
+                                                <option key={s} value={s}>
+                                                    {s}
+                                                </option>
+                                            ))}
+                                        </select>
+
+                                        <select
+                                            className="border rounded p-1 flex-1 text-xs"
+                                            value={priority}
+                                            onChange={(e) =>
+                                                setPriority(e.target.value as TaskPriority)
+                                            }
+                                        >
+                                            {TASK_PRIORITIES.map((p) => (
+                                                <option key={p} value={p}>
+                                                    {p}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <input
+                                        type="date"
+                                        className="border p-1 w-full rounded text-sm"
+                                        value={dueDate}
+                                        onChange={(e) => setDueDate(e.target.value)}
+                                    />
+
+                                    <button
+                                        type="submit"
+                                        className="w-full bg-black text-white py-1 rounded text-sm"
+                                    >
+                                        Add task
+                                    </button>
+                                </form>
+                            )}
+
+                            {/* задачи в колонке */}
+                            {tasksInCol.length === 0 && (
                                 <p className="text-xs text-gray-400">No tasks</p>
                             )}
 
-                            {colTasks.map((task) => (
+                            {tasksInCol.map((task) => (
                                 <div
                                     key={task.id}
-                                    className="bg-white border rounded px-2 py-2 text-sm"
+                                    className="border rounded p-2 mb-2 bg-gray-50 relative"
                                 >
-                                    <div className="font-medium text-sm">{task.title}</div>
-                                    {task.description && (
-                                        <div className="text-xs text-gray-500">
-                                            {task.description}
-                                        </div>
-                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDelete(task.id)}
+                                        className="absolute right-1 top-1 text-[10px] text-gray-400 hover:text-red-500"
+                                    >
+                                        ✕
+                                    </button>
 
-                                    <div className="mt-1 text-[11px] text-gray-500">
-                                        {task.dueDate && <>Due: {task.dueDate} • </>}
-                                        Priority: {task.priority}
+                                    <div className="font-semibold text-sm mb-1 pr-4">
+                                        {task.title}
                                     </div>
 
-                                    {/* кнопки смены статуса */}
-                                    <div className="mt-2 flex flex-wrap gap-1">
-                                        {columns.map((c) => (
+                                    <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                        {task.dueDate && <span>Due: {task.dueDate}</span>}
+                                        <span>Priority: {task.priority}</span>
+                                        {isOverdue(task) && (
+                                            <span className="ml-auto px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 border border-red-300">
+                        Overdue
+                      </span>
+                                        )}
+                                    </div>
+
+                                    <div className="flex gap-1 mt-2 flex-wrap">
+                                        {TASK_STATUSES.map((s) => (
                                             <button
-                                                key={c.key}
+                                                key={s}
                                                 type="button"
-                                                className={`border rounded px-1.5 py-0.5 text-[10px] ${
-                                                    task.status === c.key
+                                                onClick={() =>
+                                                    handleStatusChange(task.id, s)
+                                                }
+                                                className={`text-[11px] px-2 py-0.5 rounded border ${
+                                                    task.status === s
                                                         ? "bg-black text-white"
-                                                        : "bg-white text-gray-600"
+                                                        : "bg-white text-gray-700"
                                                 }`}
-                                                onClick={() => handleChangeStatus(task.id, c.key)}
                                             >
-                                                {c.title}
+                                                {s}
                                             </button>
                                         ))}
                                     </div>
                                 </div>
                             ))}
                         </div>
-                    </div>
-                );
-            })}
+                    );
+                })}
+            </div>
+
+            {toast && (
+                <Toast message={toast} onClose={() => setToast(null)} />
+            )}
         </div>
     );
 }

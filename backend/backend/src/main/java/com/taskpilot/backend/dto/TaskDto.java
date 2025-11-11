@@ -15,11 +15,12 @@ public class TaskDto {
     private String description;
     private UUID assigneeId;
     private TaskStatus status;
-    private LocalDate dueDate;      // дедлайн
-    private TaskPriority priority;  // приоритет
+    private LocalDate dueDate;
+    private TaskPriority priority;
     private Instant createdAt;
 
-    // --- getters / setters ---
+    public TaskDto() {
+    }
 
     public UUID getId() {
         return id;
