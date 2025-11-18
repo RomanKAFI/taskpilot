@@ -1,58 +1,42 @@
+// web/src/App.tsx
+import { useEffect, useState } from "react";
+import LoginPage from "./pages/Login";
+import DashboardPage from "./pages/App";
+import type { LoginResponse } from "./api/auth";
 
+function App() {
+    const [auth, setAuth] = useState<LoginResponse | null>(null);
 
-import { useState } from "react";
-import Dashboard from "./pages/Dashboard";
-import Profile from "./pages/Profile";
+    // Читаем пользователя из localStorage при старте
+    useEffect(() => {
+        const userRaw = localStorage.getItem("user");
+        if (userRaw) {
+            try {
+                const user = JSON.parse(userRaw) as LoginResponse;
+                setAuth(user);
+            } catch {
+                localStorage.removeItem("user");
+                localStorage.removeItem("token");
+            }
+        }
+    }, []);
 
-type Page = "dashboard" | "profile";
+    const handleLoginSuccess = (data: LoginResponse) => {
+        // LoginPage уже положил token и user в localStorage
+        setAuth(data);
+    };
 
-export default function App() {
-    const [page, setPage] = useState<Page>("dashboard");
+    const handleLogout = () => {
+        localStorage.removeItem("user");
+        localStorage.removeItem("token");
+        setAuth(null);
+    };
 
-    return (
-        <div className="min-h-screen bg-gray-50 text-gray-900">
-            {/* Верхний бар */}
-            <header className="border-b bg-white">
-                <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <div className="h-6 w-6 rounded-full bg-black text-white flex items-center justify-center text-xs font-bold">
-                            T
-                        </div>
-                        <span className="font-semibold text-sm">TaskPilot</span>
-                    </div>
+    if (!auth) {
+        return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+    }
 
-                    <nav className="flex gap-2 text-sm">
-                        <button
-                            type="button"
-                            onClick={() => setPage("dashboard")}
-                            className={
-                                "px-3 py-1 rounded-full border text-xs " +
-                                (page === "dashboard"
-                                    ? "bg-black text-white border-black"
-                                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100")
-                            }
-                        >
-                            Dashboard
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setPage("profile")}
-                            className={
-                                "px-3 py-1 rounded-full border text-xs " +
-                                (page === "profile"
-                                    ? "bg-black text-white border-black"
-                                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100")
-                            }
-                        >
-                            Profile
-                        </button>
-                    </nav>
-                </div>
-            </header>
-
-            <main className="max-w-5xl mx-auto">
-                {page === "dashboard" ? <Dashboard /> : <Profile />}
-            </main>
-        </div>
-    );
+    return <DashboardPage currentUser={auth} onLogout={handleLogout} />;
 }
+
+export default App;
